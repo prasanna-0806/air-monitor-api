@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import joblib
 import numpy as np
+import httpx
 
 app = FastAPI()
 
@@ -14,6 +15,9 @@ app.add_middleware(
 )
 
 model = joblib.load("air_quality_model.pkl")
+
+import os
+CLAUDE_API_KEY = os.environ.get("CLAUDE_API_KEY")
 
 class SensorData(BaseModel):
     temperature: float
@@ -47,3 +51,28 @@ def predict(data: SensorData):
         "temperature": data.temperature,
         "humidity": data.humidity
     }
+
+@app.post("/ai-advice")
+async def ai_advice(data: SensorData):
+    quality = "Good" if data.gas < 1000 else "Moderate" if data.gas < 2000 else "Bad"
+
+    async with httpx.AsyncClient() as client:
+        res = await client.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": CLAUDE_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json"
+            },
+            json={
+                "model": "claude-haiku-4-5-20251001",
+                "max_tokens": 200,
+                "messages": [{
+                    "role": "user",
+                    "content": f"You are an indoor air quality expert. Based on these IoT sensor readings, give 3 short specific actionable recommendations in bullet points. Be concise.\n\nTemperature: {data.temperature}°C\nHumidity: {data.humidity}%\nGas Level: {data.gas}\nAir Quality: {quality}\n\nGive exactly 3 bullet points, each under 15 words."
+                }]
+            },
+            timeout=30.0
+        )
+        result = res.json()
+        return {"advice": result["content"][0]["text"]}
