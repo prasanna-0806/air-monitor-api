@@ -4,6 +4,7 @@ from pydantic import BaseModel
 import joblib
 import numpy as np
 import httpx
+import os
 
 app = FastAPI()
 
@@ -16,7 +17,6 @@ app.add_middleware(
 
 model = joblib.load("air_quality_model.pkl")
 
-import os
 CLAUDE_API_KEY = os.environ.get("CLAUDE_API_KEY")
 
 class SensorData(BaseModel):
@@ -69,10 +69,15 @@ async def ai_advice(data: SensorData):
                 "max_tokens": 200,
                 "messages": [{
                     "role": "user",
-                    "content": f"You are an indoor air quality expert. Based on these IoT sensor readings, give 3 short specific actionable recommendations in bullet points. Be concise.\n\nTemperature: {data.temperature}°C\nHumidity: {data.humidity}%\nGas Level: {data.gas}\nAir Quality: {quality}\n\nGive exactly 3 bullet points, each under 15 words."
+                    "content": f"You are an indoor air quality expert. Give 3 short actionable recommendations in bullet points based on: Temperature: {data.temperature}°C, Humidity: {data.humidity}%, Gas Level: {data.gas}, Air Quality: {quality}. Each bullet under 15 words."
                 }]
             },
             timeout=30.0
         )
         result = res.json()
-        return {"advice": result["content"][0]["text"]}
+        print("Claude response:", result)
+
+        if "content" in result:
+            return {"advice": result["content"][0]["text"]}
+        else:
+            return {"advice": f"API Error: {result.get('error', {}).get('message', 'Unknown error')}"}
